@@ -125,7 +125,7 @@ def train_top_model():
     validation_data = np.load(open('bottleneck_features_validation.npy','rb'))
     validation_labels = np.array([0] * (nb_validation_samples // 2) + [1] * (nb_validation_samples // 2))
 
-    model = mkClass(False)
+    model = mkClassifier(False, train_data.shape[1:])
     model.compile(optimizer='rmsprop', loss='binary_crossentropy', metrics=['accuracy'])
 
     model.fit(train_data, train_labels,
@@ -162,10 +162,11 @@ def mkVGG16(load_no_top=True):
         model.load_weights(weights_path)
     return model
 
-def mkClass(load_top=True):
+
+def mkClassifier(load_top=True, input_shape=None):
     # build a classifier model to put on top of the convolutional model
     top_model = Sequential()
-    top_model.add(Flatten(input_shape=model.output_shape[1:],name='flatten'))
+    top_model.add(Flatten(input_shape=input_shape,name='flatten'))
     top_model.add(Dense(256, activation='relu',name='fc1'))
     top_model.add(Dropout(0.5,name='dropout1'))
     top_model.add(Dense(1, activation='sigmoid',name='binary_prediction'))
@@ -176,24 +177,27 @@ def mkClass(load_top=True):
     return top_model
 
 
-def mkFinetune():
+def mkFinetune(load=True):
     model = mkVGG16()
-    model.add(mkClass())
-    model.load_weights(fine_tuned_model_weights_path)
+    cls = mkClassifier(False, model.output_shape[1:])
+    model.add(cls)
+    if load:
+        model.load_weights(fine_tuned_model_weights_path)
+        pass
     return model
 
 
 def fine_tune():
     model = mkVGG16()
-
-    # add the model on top of the convolutional base
-    model.add(mkClass())
-
+    top_model = mkClassifier(input_shape=model.output_shape[1:])
+    model.add(top_model)
+    
     # set the first 25 layers (up to the last conv block)
     # to non-trainable (weights will not be updated)
     for layer in model.layers[:25]:
         layer.trainable = False
-
+        pass
+    
     # compile the model with a SGD/momentum optimizer
     # and a very slow learning rate.
     model.compile(loss='binary_crossentropy',
