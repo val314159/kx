@@ -1,14 +1,11 @@
 # -*- coding: utf-8 -*-
-from __future__ import print_function
-from __future__ import absolute_import
-
-import warnings
-
 from pprint import pprint
 import os
 import h5py
 import numpy as np
+from keras import optimizers
 from keras.preprocessing.image import ImageDataGenerator
+from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 from keras.utils.data_utils import get_file
 from keras.models import Sequential, Model
 from keras.layers import Flatten, Dense, Input, Dropout
@@ -17,6 +14,7 @@ from keras.layers import Convolution2D, MaxPooling2D, ZeroPadding2D
 
 TF_WEIGHTS_PATH = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels.h5'
 TF_WEIGHTS_PATH_NO_TOP = 'https://github.com/fchollet/deep-learning-models/releases/download/v0.1/vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5'
+
 
 fine_tuned_model_weights_path = 'fine_tuned_model.h5'
 # path to the model weights file.
@@ -56,52 +54,49 @@ def network1():
     return model
 
 
+def train1():
+    model = network1()
+
+    model.compile(loss='binary_crossentropy',
+                  optimizer='rmsprop',
+                  metrics=['accuracy'])
+
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True)
+
+    test_datagen = ImageDataGenerator(rescale=1./255)
+
+    train_generator = train_datagen.flow_from_directory(
+        'data/train',  # this is the target directory
+        target_size=(150, 150),  # all images will be resized to 150x150
+        batch_size=32,
+        class_mode='binary')  # since we use binary_crossentropy loss, we need binary labels
+
+    validation_generator = test_datagen.flow_from_directory(
+        'data/validation',
+        target_size=(150, 150),
+        batch_size=32,
+        class_mode='binary')
+
+    model.fit_generator(
+        train_generator,
+        samples_per_epoch=2000,
+        nb_epoch=50,
+        validation_data=validation_generator,
+        nb_val_samples=800)
+
+    model.save_weights('first_try.h5')  # always save your weights after training or during training
+    return model
+
+
 def save_bottleneck_features():
     datagen = ImageDataGenerator(rescale=1./255)
 
     # build the VGG16 network
-
-    x = img_input = Input(shape=(img_width, img_height, 3))
-
-    # Block 1
-    x = Convolution2D(64, 3, 3, activation='relu', border_mode='same', name='conv1_1')(x)
-    x = Convolution2D(64, 3, 3, activation='relu', border_mode='same', name='conv1_2')(x)
-    x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='pool1')(x)
-
-    # Block 2
-    x = Convolution2D(128, 3, 3, activation='relu', border_mode='same', name='conv2_1')(x)
-    x = Convolution2D(128, 3, 3, activation='relu', border_mode='same', name='conv2_2')(x)
-    x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='pool2')(x)
-
-    # Block 3
-    x = Convolution2D(256, 3, 3, activation='relu', border_mode='same', name='conv3_1')(x)
-    x = Convolution2D(256, 3, 3, activation='relu', border_mode='same', name='conv3_2')(x)
-    x = Convolution2D(256, 3, 3, activation='relu', border_mode='same', name='conv3_3')(x)
-    x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='pool3')(x)
-
-    # Block 4
-    x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv4_1')(x)
-    x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv4_2')(x)
-    x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv4_3')(x)
-    x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='pool4')(x)
-
-    # Block 5
-    x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv5_1')(x)
-    x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv5_2')(x)
-    x = Convolution2D(512, 3, 3, activation='relu', border_mode='same', name='conv5_3')(x)
-    x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='pool5')(x)
-
-    model = Model(img_input, x, name='vgg16')
-
-    xweights_path = get_file('vgg16_weights_tf_dim_ordering_tf_kernels.h5',
-                             TF_WEIGHTS_PATH,
-                             cache_subdir='models')
-
-    weights_path = get_file('vgg16_weights_tf_dim_ordering_tf_kernels_notop.h5',
-                            TF_WEIGHTS_PATH_NO_TOP,
-                            cache_subdir='models')
-
-    model.load_weights(weights_path)
+    model = mkVGG16()
     print('Model loaded.')
     
     generator = datagen.flow_from_directory(
@@ -122,6 +117,7 @@ def save_bottleneck_features():
     bottleneck_features_validation = model.predict_generator(generator, nb_validation_samples)
     np.save(open('bottleneck_features_validation.npy', 'wb'), bottleneck_features_validation)
 
+
 def train_top_model():
     train_data = np.load(open('bottleneck_features_train.npy','rb'))
     train_labels = np.array([0] * (nb_train_samples // 2) + [1] * (nb_train_samples // 2))
@@ -129,12 +125,7 @@ def train_top_model():
     validation_data = np.load(open('bottleneck_features_validation.npy','rb'))
     validation_labels = np.array([0] * (nb_validation_samples // 2) + [1] * (nb_validation_samples // 2))
 
-    model = Sequential()
-    model.add(Flatten(input_shape=train_data.shape[1:]))
-    model.add(Dense(256, activation='relu'))
-    model.add(Dropout(0.5))
-    model.add(Dense(1, activation='sigmoid'))
-
+    model = mkClass(False)
     model.compile(optimizer='rmsprop', loss='binary_crossentropy', metrics=['accuracy'])
 
     model.fit(train_data, train_labels,
@@ -171,20 +162,19 @@ def mkVGG16(load_no_top=True):
         model.load_weights(weights_path)
     return model
 
-def mkClass():
+def mkClass(load_top=True):
     # build a classifier model to put on top of the convolutional model
     top_model = Sequential()
     top_model.add(Flatten(input_shape=model.output_shape[1:],name='flatten'))
     top_model.add(Dense(256, activation='relu',name='fc1'))
     top_model.add(Dropout(0.5,name='dropout1'))
     top_model.add(Dense(1, activation='sigmoid',name='binary_prediction'))
-
-    # note that it is necessary to start with a fully-trained
-    # classifier, including the top classifier,
-    # in order to successfully do fine-tuning
-    top_model.load_weights(top_model_weights_path)
-    print('Model2 loaded.')
+    if load_top:
+        top_model.load_weights(top_model_weights_path)
+        print('Model2 loaded.')
+        pass
     return top_model
+
 
 def mkFinetune():
     model = mkVGG16()
@@ -192,3 +182,53 @@ def mkFinetune():
     model.load_weights(fine_tuned_model_weights_path)
     return model
 
+
+def fine_tune():
+    model = mkVGG16()
+
+    # add the model on top of the convolutional base
+    model.add(mkClass())
+
+    # set the first 25 layers (up to the last conv block)
+    # to non-trainable (weights will not be updated)
+    for layer in model.layers[:25]:
+        layer.trainable = False
+
+    # compile the model with a SGD/momentum optimizer
+    # and a very slow learning rate.
+    model.compile(loss='binary_crossentropy',
+                  optimizer=optimizers.SGD(lr=1e-4, momentum=0.9),
+                  metrics=['accuracy'])
+
+    # prepare data augmentation configuration
+    train_datagen = ImageDataGenerator(
+        rescale=1./255,
+        shear_range=0.2,
+        zoom_range=0.2,
+        horizontal_flip=True)
+
+    test_datagen = ImageDataGenerator(rescale=1./255)
+
+    train_generator = train_datagen.flow_from_directory(
+        train_data_dir,
+        target_size=(img_height, img_width),
+        batch_size=32,
+        class_mode='binary')
+
+    validation_generator = test_datagen.flow_from_directory(
+        validation_data_dir,
+        target_size=(img_height, img_width),
+        batch_size=32,
+        class_mode='binary')
+
+    # fine-tune the model
+    model.fit_generator(
+        train_generator,
+        samples_per_epoch=nb_train_samples,
+        nb_epoch=nb_epoch,
+        validation_data=validation_generator,
+    nb_val_samples=nb_validation_samples)
+
+    model.save_weights(fine_tuned_model_weights_path)
+    model.save("model.h5")
+    return model
