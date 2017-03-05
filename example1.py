@@ -4,32 +4,10 @@ from __future__ import absolute_import
 
 import warnings
 
-from keras.models import Model
-from keras.layers import Flatten, Dense, Input, Dropout
-from keras.layers import Convolution2D, MaxPooling2D
 from keras.preprocessing.image import ImageDataGenerator, array_to_img, img_to_array, load_img
 
-x = img_input = Input(shape=(150, 150, 3))
-
-# Block 1
-x = Convolution2D(32, 3, 3, activation='relu', border_mode='same', name='block1_conv1')(x)
-x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block1_pool')(x)
-
-# Block 2
-x = Convolution2D(32, 3, 3, activation='relu', border_mode='same', name='block2_conv1')(x)
-x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block2_pool')(x)
-
-# Block 3
-x = Convolution2D(64, 3, 3, activation='relu', border_mode='same', name='block3_conv1')(x)
-x = MaxPooling2D(pool_size=(2, 2), strides=(2, 2), name='block3_pool')(x)
-
-# Classification block
-x = Flatten(name='flatten')(x)
-x = Dense(64, activation='relu', name='fc1')(x)
-x = Dropout(0.5)(x)
-x = Dense(1, activation='sigmoid', name='binary_predictions')(x)
-
-model = Model(img_input, x, name='vgg16')
+from networks import network1
+model = network1()
 
 model.compile(loss='binary_crossentropy',
               optimizer='rmsprop',
