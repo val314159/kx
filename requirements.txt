@@ -1,0 +1,9 @@
+readline
+keras
+tensorflow-gpu
+pillow
+matplotlib
+jupyter
+gevent
+bottle
+h5py
